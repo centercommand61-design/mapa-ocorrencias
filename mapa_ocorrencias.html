@@ -178,6 +178,7 @@ const map = L.map('mapid', {
 
 let currentTile = 'hybrid';
 let heatLayer = null;
+let maskLayer = null;
 let markersLayer = L.layerGroup().addTo(map);
 let dadosGlobais = [];
 let currentFilter = 'all';
@@ -227,18 +228,19 @@ function renderMapa(filter) {
 
     if (pts.length > 0) {
       heatLayer = L.heatLayer(pts, {
-        radius: 80,
-        blur: 60,
-        minOpacity: 0.4,
+        radius: 90,
+        blur: 55,
+        minOpacity: 0.7,
         max: 1.0,
         gradient: {
-          0.0: '#ffffb2',
-          0.3: '#fecc5c',
-          0.55: '#fd8d3c',
+          0.2: '#fecc5c',
+          0.5: '#fd8d3c',
           0.75: '#f03b20',
           1.0: '#8c0014'
         }
       }).addTo(map);
+      // Garante que o heatLayer fique sempre acima da máscara
+      if (maskLayer) heatLayer.bringToFront();
     }
   }
 
@@ -283,6 +285,13 @@ function renderMapa(filter) {
         m.bindTooltip(`<b>${c.regiao}</b><br>${c.descricao}`, { direction: 'top', offset: [0, -8] });
       });
   }
+  // Garante que heatmap e marcadores ficam acima da máscara do oceano
+  setTimeout(bringLayersToFront, 100);
+}
+
+function bringLayersToFront() {
+  if (heatLayer) heatLayer.bringToFront();
+  if (markersLayer) markersLayer.bringToFront();
 }
 
 function showCard(d) {
@@ -368,15 +377,18 @@ fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/coun
       }
     };
 
-    L.geoJSON(maskGeoJSON, {
+    maskLayer = L.geoJSON(maskGeoJSON, {
       style: {
-        fillColor: '#a8c8d8',
-        fillOpacity: 0.85,
+        fillColor: '#1a3a52',
+        fillOpacity: 0.92,
         color: 'none',
         weight: 0
       },
       interactive: false
     }).addTo(map);
+    // Se já há heatLayer, traz para frente da máscara
+    if (heatLayer) heatLayer.bringToFront();
+    if (markersLayer) markersLayer.bringToFront();
   }).catch(e => console.warn('Máscara não carregou', e));
 
 carregarDados();
