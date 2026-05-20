@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Monitoramento de Ocorrências</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f8; color: #222; }
+
+  header {
+    background: #1a3a5c;
+    color: white;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 17px; font-weight: 600; }
+  header span { font-size: 12px; opacity: 0.75; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+
+  .top-bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filters button {
+    font-size: 13px; padding: 5px 14px; border-radius: 20px; cursor: pointer;
+    border: 1px solid #bbb; background: #fff; color: #555; transition: all 0.15s;
+  }
+  .filters button.active {
+    background: #1a3a5c; color: #fff; border-color: #1a3a5c; font-weight: 600;
+  }
+
+  .legend {
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    padding: 10px 14px; font-size: 12px;
+  }
+  .legend p { font-weight: 600; color: #666; margin-bottom: 7px; }
+  .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .legend-grad {
+    width: 70px; height: 10px; border-radius: 3px;
+    background: linear-gradient(to right,#ffffb2,#fecc5c,#fd8d3c,#f03b20,#bd0026,#238b45);
+  }
+  .legend-sq {
+    width: 14px; height: 14px; border-radius: 3px;
+    background: #e67e22; border: 2px solid #fff;
+    box-shadow: 0 0 0 1px #e67e22; flex-shrink: 0;
+  }
+
+  #map-wrap {
+    width: 100%; background: #dce8f0;
+    border-radius: 12px; border: 1px solid #ccc;
+    overflow: hidden;
+  }
+
+  #info-card {
+    display: none; margin-top: 12px;
+    background: #fff; border: 1px solid #ddd;
+    border-radius: 8px; padding: 12px 16px;
+  }
+  #info-card .tag {
+    display: inline-block; font-size: 11px; padding: 2px 10px;
+    border-radius: 10px; margin-bottom: 6px; font-weight: 600;
+  }
+  #info-card h3 { font-size: 14px; margin-bottom: 3px; }
+  #info-card p  { font-size: 13px; color: #666; }
+
+  #status {
+    font-size: 12px; color: #888; margin-top: 10px; text-align: right;
+  }
+  #loading {
+    text-align: center; padding: 40px;
+    font-size: 14px; color: #666;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Monitoramento de Ocorrências — Brasil</h1>
+  <span id="header-date">Carregando...</span>
+</header>
+
+<div class="container">
+
+  <div class="top-bar">
+    <div class="filters" id="filters">
+      <button class="active" onclick="setFilter('all',this)">Todos</button>
+      <button onclick="setFilter('chuva_forte',this)">Chuva forte</button>
+      <button onclick="setFilter('chuva_moderada',this)">Chuva moderada</button>
+      <button onclick="setFilter('chuva_fraca',this)">Chuva fraca</button>
+      <button onclick="setFilter('bloqueio',this)">Bloqueio</button>
+    </div>
+    <div class="legend">
+      <p>Legenda</p>
+      <div class="legend-item">
+        <div class="legend-grad"></div>
+        <span>Chuva fraca → muito intensa</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-sq"></div>
+        <span>Bloqueio em rodovia</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="map-wrap">
+    <div id="loading">Carregando dados da planilha...</div>
+  </div>
+
+  <div id="info-card">
+    <span class="tag" id="ic-tag"></span>
+    <h3 id="ic-title"></h3>
+    <p id="ic-desc"></p>
+  </div>
+
+  <p id="status"></p>
+</div>
+
+<script>
+// =====================================================================
+//  CONFIGURAÇÃO — altere apenas esta seção
+// =====================================================================
+
+// Cole aqui a URL CSV da sua planilha Google Sheets
+// Como obter: Arquivo → Compartilhar → Publicar na web → CSV → Copiar link
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRrysvG-gD3Eic4CgOpPd8vBaOKvZ8IkL2MM7JcEJwYrslOKuoYl6vzwATwUNmNd3SOomucHs4j-20A/pub?output=csv";
+
+// Intervalo de atualização automática (em minutos)
+const ATUALIZAR_A_CADA = 60;
+
+// =====================================================================
+
+let dadosGlobais = [];
+let currentFilter = 'all';
+
+const INTENSIDADE = {
+  'chuva_forte':    1.0,
+  'chuva_moderada': 0.55,
+  'chuva_fraca':    0.25,
+  'bloqueio':       null
+};
+
+const TIPO_LABEL = {
+  'chuva_forte':    'Chuva forte',
+  'chuva_moderada': 'Chuva moderada',
+  'chuva_fraca':    'Chuva fraca',
+  'bloqueio':       'Bloqueio em rodovia'
+};
+
+const TAG_COLORS = {
+  'chuva_forte':    { bg: '#fde8e8', color: '#b91c1c' },
+  'chuva_moderada': { bg: '#fff7e0', color: '#92400e' },
+  'chuva_fraca':    { bg: '#e6f9ee', color: '#166534' },
+  'bloqueio':       { bg: '#fff0e0', color: '#b45309' }
+};
+
+function heatColor(t) {
+  const stops = [
+    [0.0,  [255,255,178]],
+    [0.3,  [254,204, 92]],
+    [0.55, [253,141, 60]],
+    [0.75, [240, 59, 32]],
+    [0.9,  [189,  0, 38]],
+    [1.0,  [ 35,139, 69]],
+  ];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const lo = stops[i-1], hi = stops[i];
+      const f = (t - lo[0]) / (hi[0] - lo[0]);
+      const r = Math.round(lo[1][0] + (hi[1][0] - lo[1][0]) * f);
+      const g = Math.round(lo[1][1] + (hi[1][1] - lo[1][1]) * f);
+      const b = Math.round(lo[1][2] + (hi[1][2] - lo[1][2]) * f);
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  return 'rgb(35,139,69)';
+}
+
+async function carregarDados() {
+  try {
+    const resp = await fetch(SHEET_CSV_URL);
+    const text = await resp.text();
+    const linhas = text.trim().split('\n').slice(1);
+    dadosGlobais = linhas.map(l => {
+      const cols = l.split(',').map(c => c.trim().replace(/^"|"$/g,''));
+      return {
+        regiao:    cols[0] || '',
+        lat:       parseFloat(cols[1]),
+        lng:       parseFloat(cols[2]),
+        tipo:      (cols[3] || '').toLowerCase().replace(/ /g,'_'),
+        descricao: cols[4] || '',
+        ativo:     (cols[5] || 'sim').toLowerCase() === 'sim'
+      };
+    }).filter(d => !isNaN(d.lat) && !isNaN(d.lng) && d.ativo);
+
+    const agora = new Date();
+    const fmt = agora.toLocaleDateString('pt-BR') + ' — ' +
+                agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + 'h';
+    document.getElementById('header-date').textContent = 'Atualizado em ' + fmt;
+    document.getElementById('status').textContent =
+      dadosGlobais.length + ' ocorrências carregadas · próxima atualização em ' + ATUALIZAR_A_CADA + ' min';
+
+    desenharMapa(currentFilter);
+  } catch(e) {
+    document.getElementById('loading').textContent =
+      'Erro ao carregar dados. Verifique se a URL do Sheets está correta e pública.';
+    console.error(e);
+  }
+}
+
+async function desenharMapa(filter) {
+  const wrap = document.getElementById('map-wrap');
+  wrap.innerHTML = '';
+  const W = wrap.clientWidth || 700;
+  const H = Math.round(W * 0.72);
+  wrap.style.height = H + 'px';
+
+  const svg = d3.select('#map-wrap').append('svg').attr('width', W).attr('height', H);
+
+  const topo = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+  const countries = topojson.feature(topo, topo.objects.countries);
+  const brazil = {
+    type: 'FeatureCollection',
+    features: countries.features.filter(f => f.id === '076')
+  };
+
+  const proj = d3.geoMercator().fitSize([W, H], brazil);
+  const path = d3.geoPath().projection(proj);
+  const defs = svg.append('defs');
+
+  const dados = dadosGlobais.filter(d =>
+    filter === 'all' || d.tipo === filter
+  );
+
+  // Heatmap de chuvas
+  dados.filter(d => d.tipo !== 'bloqueio').forEach((c, i) => {
+    const [px, py] = proj([c.lng, c.lat]);
+    const int = INTENSIDADE[c.tipo] ?? 0.5;
+    const r = 38 + int * 85;
+    const gid = `hg${i}`;
+    const grad = defs.append('radialGradient').attr('id', gid)
+      .attr('cx','50%').attr('cy','50%').attr('r','50%');
+    grad.append('stop').attr('offset','0%')
+      .attr('stop-color', heatColor(int)).attr('stop-opacity', 0.78);
+    grad.append('stop').attr('offset','55%')
+      .attr('stop-color', heatColor(int * 0.6)).attr('stop-opacity', 0.35);
+    grad.append('stop').attr('offset','100%')
+      .attr('stop-color', heatColor(int * 0.2)).attr('stop-opacity', 0.0);
+    svg.append('ellipse')
+      .attr('cx', px).attr('cy', py)
+      .attr('rx', r * 1.2).attr('ry', r)
+      .attr('fill', `url(#${gid})`);
+  });
+
+  // Contorno do Brasil
+  svg.append('g').selectAll('path')
+    .data(brazil.features).join('path')
+    .attr('d', path)
+    .attr('fill', 'none')
+    .attr('stroke', '#6b93a8')
+    .attr('stroke-width', 1.2);
+
+  // Marcadores de bloqueio
+  dados.filter(d => d.tipo === 'bloqueio').forEach(b => {
+    const [px, py] = proj([b.lng, b.lat]);
+    const g = svg.append('g')
+      .attr('transform', `translate(${px},${py})`)
+      .style('cursor','pointer');
+    g.append('rect')
+      .attr('x',-10).attr('y',-10).attr('width',20).attr('height',20)
+      .attr('rx',3).attr('fill','#e67e22')
+      .attr('stroke','#fff').attr('stroke-width',2);
+    g.append('text')
+      .attr('text-anchor','middle').attr('dy','0.35em')
+      .attr('font-size','13px').attr('font-weight','700')
+      .attr('fill','#fff').text('!');
+    g.on('click', () => showCard(b));
+  });
+
+  // Pontos clicáveis nas chuvas
+  dados.filter(d => d.tipo !== 'bloqueio').forEach(c => {
+    const [px, py] = proj([c.lng, c.lat]);
+    svg.append('circle')
+      .attr('cx', px).attr('cy', py).attr('r', 5)
+      .attr('fill','rgba(0,0,0,0.25)').attr('stroke','#fff').attr('stroke-width',1.5)
+      .style('cursor','pointer')
+      .on('click', () => showCard(c));
+  });
+}
+
+function showCard(d) {
+  const tipo = d.tipo || 'bloqueio';
+  const colors = TAG_COLORS[tipo] || {bg:'#eee',color:'#333'};
+  const tag = document.getElementById('ic-tag');
+  tag.textContent = TIPO_LABEL[tipo] || tipo;
+  tag.style.background = colors.bg;
+  tag.style.color = colors.color;
+  document.getElementById('ic-title').textContent = d.regiao || d.local || '';
+  document.getElementById('ic-desc').textContent = d.descricao || d.desc || '';
+  document.getElementById('info-card').style.display = 'block';
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('#filters button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('info-card').style.display = 'none';
+  desenharMapa(f);
+}
+window.setFilter = setFilter;
+
+// Carregar ao abrir e repetir conforme configuração
+carregarDados();
+setInterval(carregarDados, ATUALIZAR_A_CADA * 60 * 1000);
+</script>
+</body>
+</html>
