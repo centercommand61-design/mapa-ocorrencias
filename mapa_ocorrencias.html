@@ -4,8 +4,9 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Monitoramento de Ocorrências</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f8; color: #222; }
@@ -17,11 +18,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    z-index: 1000;
+    position: relative;
   }
   header h1 { font-size: 17px; font-weight: 600; }
   header span { font-size: 12px; opacity: 0.75; }
 
-  .container { max-width: 980px; margin: 0 auto; padding: 20px 16px; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 16px; }
 
   .top-bar {
     display: flex;
@@ -29,10 +32,10 @@
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
-  .filters { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .filters button {
     font-size: 13px; padding: 5px 14px; border-radius: 20px; cursor: pointer;
     border: 1px solid #bbb; background: #fff; color: #555; transition: all 0.15s;
@@ -40,6 +43,15 @@
   .filters button.active {
     background: #1a3a5c; color: #fff; border-color: #1a3a5c; font-weight: 600;
   }
+
+  .right-controls { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+
+  .tile-switcher { display: flex; gap: 6px; }
+  .tile-btn {
+    font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    border: 1px solid #bbb; background: #fff; color: #555;
+  }
+  .tile-btn.active { background: #1a3a5c; color: #fff; border-color: #1a3a5c; font-weight: 600; }
 
   .legend {
     background: #fff; border: 1px solid #ddd; border-radius: 8px;
@@ -49,7 +61,7 @@
   .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
   .legend-grad {
     width: 70px; height: 10px; border-radius: 3px;
-    background: linear-gradient(to right,#ffffb2,#fecc5c,#fd8d3c,#f03b20,#bd0026,#8c0014);
+    background: linear-gradient(to right,#ffffb2,#fecc5c,#fd8d3c,#f03b20,#8c0014);
   }
   .legend-sq {
     width: 14px; height: 14px; border-radius: 3px;
@@ -57,10 +69,13 @@
     box-shadow: 0 0 0 1px #e67e22; flex-shrink: 0;
   }
 
-  #map-wrap {
-    width: 100%; background: #dce8f0;
-    border-radius: 12px; border: 1px solid #ccc;
+  #mapid {
+    width: 100%;
+    height: 600px;
+    border-radius: 12px;
+    border: 1px solid #ccc;
     overflow: hidden;
+    z-index: 1;
   }
 
   #info-card {
@@ -75,13 +90,7 @@
   #info-card h3 { font-size: 14px; margin-bottom: 3px; }
   #info-card p  { font-size: 13px; color: #666; }
 
-  #status {
-    font-size: 12px; color: #888; margin-top: 10px; text-align: right;
-  }
-  #loading {
-    text-align: center; padding: 40px;
-    font-size: 14px; color: #666;
-  }
+  #status { font-size: 12px; color: #888; margin-top: 10px; text-align: right; }
 </style>
 </head>
 <body>
@@ -92,7 +101,6 @@
 </header>
 
 <div class="container">
-
   <div class="top-bar">
     <div class="filters" id="filters">
       <button class="active" onclick="setFilter('all',this)">Todos</button>
@@ -101,22 +109,31 @@
       <button onclick="setFilter('chuva_fraca',this)">Chuva fraca</button>
       <button onclick="setFilter('bloqueio',this)">Bloqueio</button>
     </div>
-    <div class="legend">
-      <p>Legenda</p>
-      <div class="legend-item">
-        <div class="legend-grad"></div>
-        <span>Chuva fraca → muito intensa</span>
+
+    <div class="right-controls">
+      <div>
+        <p style="font-size:11px;color:#888;margin-bottom:4px;">Estilo do mapa</p>
+        <div class="tile-switcher">
+          <button class="tile-btn" onclick="setTile('street',this)">🗺 Ruas</button>
+          <button class="tile-btn active" onclick="setTile('hybrid',this)">🛰 Híbrido</button>
+          <button class="tile-btn" onclick="setTile('topo',this)">⛰ Relevo</button>
+        </div>
       </div>
-      <div class="legend-item">
-        <div class="legend-sq"></div>
-        <span>Bloqueio em rodovia</span>
+      <div class="legend">
+        <p>Legenda</p>
+        <div class="legend-item">
+          <div class="legend-grad"></div>
+          <span>Chuva fraca → forte</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-sq"></div>
+          <span>Bloqueio em rodovia</span>
+        </div>
       </div>
     </div>
   </div>
 
-  <div id="map-wrap">
-    <div id="loading">Carregando dados da planilha...</div>
-  </div>
+  <div id="mapid"></div>
 
   <div id="info-card">
     <span class="tag" id="ic-tag"></span>
@@ -131,23 +148,44 @@
 // =====================================================================
 //  CONFIGURAÇÃO — altere apenas esta seção
 // =====================================================================
-
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRrysvG-gD3Eic4CgOpPd8vBaOKvZ8IkL2MM7JcEJwYrslOKuoYl6vzwATwUNmNd3SOomucHs4j-20A/pub?output=csv";
-
-const ATUALIZAR_A_CADA = 60;
-
+const ATUALIZAR_A_CADA = 60; // minutos
 // =====================================================================
 
+const TILES = {
+  street: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Esri', maxZoom: 19
+  }),
+  hybrid: L.layerGroup([
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Esri World Imagery', maxZoom: 19
+    }),
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Esri Labels', maxZoom: 19, opacity: 1
+    })
+  ]),
+  topo: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Esri Topo', maxZoom: 19
+  })
+};
+
+const map = L.map('mapid', {
+  center: [-14, -51],
+  zoom: 4,
+  zoomControl: true,
+  layers: [TILES.hybrid]
+});
+
+let currentTile = 'hybrid';
+let heatLayer = null;
+let markersLayer = L.layerGroup().addTo(map);
 let dadosGlobais = [];
 let currentFilter = 'all';
-let topoCache = null;
-let estadosCache = null;
 
 const INTENSIDADE = {
   'chuva_forte':    1.0,
   'chuva_moderada': 0.55,
   'chuva_fraca':    0.25,
-  'bloqueio':       null
 };
 
 const TIPO_LABEL = {
@@ -160,184 +198,102 @@ const TIPO_LABEL = {
 const TAG_COLORS = {
   'chuva_forte':    { bg: '#fde8e8', color: '#b91c1c' },
   'chuva_moderada': { bg: '#fff7e0', color: '#92400e' },
-  'chuva_fraca':    { bg: '#e6f9ee', color: '#166534' },
+  'chuva_fraca':    { bg: '#fefce8', color: '#92400e' },
   'bloqueio':       { bg: '#fff0e0', color: '#b45309' }
 };
 
-function heatColor(t) {
-  // Amarelo → laranja → vermelho → vermelho escuro (sem verde)
-  const stops = [
-    [0.0,  [255,255,178]],
-    [0.3,  [254,204, 92]],
-    [0.55, [253,141, 60]],
-    [0.75, [240, 59, 32]],
-    [1.0,  [140,  0, 20]],
-  ];
-  for (let i = 1; i < stops.length; i++) {
-    if (t <= stops[i][0]) {
-      const lo = stops[i-1], hi = stops[i];
-      const f = (t - lo[0]) / (hi[0] - lo[0]);
-      return `rgb(${Math.round(lo[1][0]+(hi[1][0]-lo[1][0])*f)},${Math.round(lo[1][1]+(hi[1][1]-lo[1][1])*f)},${Math.round(lo[1][2]+(hi[1][2]-lo[1][2])*f)})`;
+function setTile(name, btn) {
+  map.removeLayer(TILES[currentTile]);
+  currentTile = name;
+  TILES[name].addTo(map);
+  document.querySelectorAll('.tile-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+window.setTile = setTile;
+
+function renderMapa(filter) {
+  // Remove camadas anteriores
+  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+  markersLayer.clearLayers();
+
+  const mostrarChuva   = filter === 'all' || filter === 'chuva_forte' || filter === 'chuva_moderada' || filter === 'chuva_fraca';
+  const mostrarBloqueio = filter === 'all' || filter === 'bloqueio';
+
+  // Heatmap de chuvas
+  if (mostrarChuva) {
+    const pts = dadosGlobais
+      .filter(d => d.tipo !== 'bloqueio' && (filter === 'all' || d.tipo === filter))
+      .map(d => [d.lat, d.lng, INTENSIDADE[d.tipo] ?? 0.5]);
+
+    if (pts.length > 0) {
+      heatLayer = L.heatLayer(pts, {
+        radius: 80,
+        blur: 60,
+        maxZoom: 6,
+        max: 1.0,
+        gradient: {
+          0.0: '#ffffb2',
+          0.3: '#fecc5c',
+          0.55: '#fd8d3c',
+          0.75: '#f03b20',
+          1.0: '#8c0014'
+        }
+      }).addTo(map);
     }
   }
-  return 'rgb(140,0,20)';
-}
 
-async function carregarDados() {
-  try {
-    const resp = await fetch(SHEET_CSV_URL);
-    const text = await resp.text();
-    const linhas = text.trim().split('\n').slice(1);
-    dadosGlobais = linhas.map(l => {
-      const cols = l.split(',').map(c => c.trim().replace(/^"|"$/g,''));
-      return {
-        regiao:    cols[0] || '',
-        lat:       parseFloat(cols[1]),
-        lng:       parseFloat(cols[2]),
-        tipo:      (cols[3] || '').toLowerCase().replace(/ /g,'_'),
-        descricao: cols[4] || '',
-        ativo:     (cols[5] || 'sim').toLowerCase() === 'sim'
-      };
-    }).filter(d => !isNaN(d.lat) && !isNaN(d.lng) && d.ativo);
-
-    const agora = new Date();
-    const fmt = agora.toLocaleDateString('pt-BR') + ' — ' +
-                agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) + 'h';
-    document.getElementById('header-date').textContent = 'Atualizado em ' + fmt;
-    document.getElementById('status').textContent =
-      dadosGlobais.length + ' ocorrências carregadas · próxima atualização em ' + ATUALIZAR_A_CADA + ' min';
-
-    desenharMapa(currentFilter);
-  } catch(e) {
-    document.getElementById('loading').textContent =
-      'Erro ao carregar dados. Verifique se a URL do Sheets está correta e pública.';
-    console.error(e);
-  }
-}
-
-async function carregarTopos() {
-  if (topoCache && estadosCache) return;
-  // Brasil estados via IBGE simplificado hospedado no CDN confiável
-  const topo = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
-  topoCache = topo;
-  // Estados brasileiros
-  const br = await d3.json('https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson');
-  estadosCache = br;
-}
-
-async function desenharMapa(filter) {
-  const wrap = document.getElementById('map-wrap');
-  wrap.innerHTML = '';
-  const W = wrap.clientWidth || 700;
-  const H = Math.round(W * 0.72);
-  wrap.style.height = H + 'px';
-
-  await carregarTopos();
-
-  const svg = d3.select('#map-wrap').append('svg').attr('width', W).attr('height', H);
-  const defs = svg.append('defs');
-
-  const proj = d3.geoMercator().fitSize([W, H], estadosCache);
-  const path = d3.geoPath().projection(proj);
-
-  // Máscara do Brasil para o heatmap não vazar
-  const maskPath = estadosCache.features.map(f => path(f)).join(' ');
-  defs.append('clipPath').attr('id','brazil-clip')
-    .append('path').attr('d', maskPath);
-
-  // Grupo do heatmap — clipado no Brasil
-  const heatGroup = svg.append('g').attr('clip-path','url(#brazil-clip)');
-
-  const dados = dadosGlobais.filter(d => filter === 'all' || d.tipo === filter);
-
-  // Heatmap de chuvas (dentro do clip)
-  if (filter === 'all' || filter === 'chuva_forte' || filter === 'chuva_moderada' || filter === 'chuva_fraca') {
-    dados.filter(d => d.tipo !== 'bloqueio').forEach((c, i) => {
-      const [px, py] = proj([c.lng, c.lat]);
-      const int = INTENSIDADE[c.tipo] ?? 0.5;
-      const r = 40 + int * 90;
-      const gid = `hg${i}_${Date.now()}`;
-      const grad = defs.append('radialGradient').attr('id', gid)
-        .attr('cx','50%').attr('cy','50%').attr('r','50%');
-      grad.append('stop').attr('offset','0%')
-        .attr('stop-color', heatColor(int)).attr('stop-opacity', 0.82);
-      grad.append('stop').attr('offset','50%')
-        .attr('stop-color', heatColor(int * 0.65)).attr('stop-opacity', 0.40);
-      grad.append('stop').attr('offset','100%')
-        .attr('stop-color', heatColor(int * 0.2)).attr('stop-opacity', 0.0);
-      heatGroup.append('ellipse')
-        .attr('cx', px).attr('cy', py)
-        .attr('rx', r * 1.25).attr('ry', r)
-        .attr('fill', `url(#${gid})`);
+  // Marcadores de bloqueio
+  if (mostrarBloqueio) {
+    dadosGlobais.filter(d => d.tipo === 'bloqueio').forEach(b => {
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width:26px;height:26px;border-radius:5px;
+          background:#e67e22;border:2px solid #fff;
+          box-shadow:0 2px 6px rgba(0,0,0,0.4);
+          display:flex;align-items:center;justify-content:center;
+          font-size:15px;font-weight:700;color:#fff;line-height:1;">!</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13]
+      });
+      const m = L.marker([b.lat, b.lng], { icon }).addTo(markersLayer);
+      m.on('click', () => showCard(b));
+      m.bindTooltip(`<b>${b.regiao}</b><br>${b.descricao}`, { direction: 'top', offset: [0, -14] });
     });
   }
 
-  // Fundo dos estados (fill claro)
-  svg.append('g').selectAll('path')
-    .data(estadosCache.features).join('path')
-    .attr('d', path)
-    .attr('fill', '#ccdde8')
-    .attr('stroke', '#8aaabb')
-    .attr('stroke-width', 0.8)
-    .attr('fill-opacity', 0.0); // só borda, heatmap aparece por baixo
-
-  // Bordas dos estados por cima do heatmap
-  svg.append('g').selectAll('path')
-    .data(estadosCache.features).join('path')
-    .attr('d', path)
-    .attr('fill', 'none')
-    .attr('stroke', '#5a8599')
-    .attr('stroke-width', 0.8);
-
-  // Contorno externo do Brasil mais espesso
-  const topoCountries = topojson.feature(topoCache, topoCache.objects.countries);
-  const brazil = { type:'FeatureCollection', features: topoCountries.features.filter(f => f.id === '076') };
-  const projBr = d3.geoMercator().fitSize([W, H], estadosCache);
-  const pathBr = d3.geoPath().projection(projBr);
-  svg.append('g').selectAll('path')
-    .data(brazil.features).join('path')
-    .attr('d', pathBr)
-    .attr('fill', 'none')
-    .attr('stroke', '#2c5f7a')
-    .attr('stroke-width', 1.8);
-
-  // Marcadores de bloqueio — só aparecem no filtro 'all' ou 'bloqueio'
-  if (filter === 'all' || filter === 'bloqueio') {
-    dadosGlobais.filter(d => d.ativo && d.tipo === 'bloqueio').forEach(b => {
-      const [px, py] = proj([b.lng, b.lat]);
-      const g = svg.append('g').attr('transform',`translate(${px},${py})`).style('cursor','pointer');
-      g.append('rect').attr('x',-10).attr('y',-10).attr('width',20).attr('height',20)
-        .attr('rx',3).attr('fill','#e67e22').attr('stroke','#fff').attr('stroke-width',2);
-      g.append('text').attr('text-anchor','middle').attr('dy','0.35em')
-        .attr('font-size','13px').attr('font-weight','700').attr('fill','#fff').text('!');
-      g.on('click', () => showCard(b));
-    });
-  }
-
-  // Pontos clicáveis nas chuvas — cor baseada no tipo
-  const corPonto = { chuva_forte: '#8c0014', chuva_moderada: '#c05000', chuva_fraca: '#c89000' };
-  if (filter !== 'bloqueio') {
-    dados.filter(d => d.tipo !== 'bloqueio').forEach(c => {
-      const [px, py] = proj([c.lng, c.lat]);
-      svg.append('circle')
-        .attr('cx', px).attr('cy', py).attr('r', 5)
-        .attr('fill', corPonto[c.tipo] || '#8c0014')
-        .attr('stroke','#fff').attr('stroke-width',1.5)
-        .style('cursor','pointer')
-        .on('click', () => showCard(c));
-    });
+  // Pontos de chuva clicáveis
+  if (mostrarChuva) {
+    const corPonto = { chuva_forte: '#8c0014', chuva_moderada: '#c05000', chuva_fraca: '#c89000' };
+    dadosGlobais
+      .filter(d => d.tipo !== 'bloqueio' && (filter === 'all' || d.tipo === filter))
+      .forEach(c => {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+            width:10px;height:10px;border-radius:50%;
+            background:${corPonto[c.tipo] || '#8c0014'};
+            border:2px solid #fff;
+            box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>`,
+          iconSize: [10, 10],
+          iconAnchor: [5, 5]
+        });
+        const m = L.marker([c.lat, c.lng], { icon }).addTo(markersLayer);
+        m.on('click', () => showCard(c));
+        m.bindTooltip(`<b>${c.regiao}</b><br>${c.descricao}`, { direction: 'top', offset: [0, -8] });
+      });
   }
 }
 
 function showCard(d) {
   const tipo = d.tipo || 'bloqueio';
-  const colors = TAG_COLORS[tipo] || {bg:'#eee',color:'#333'};
+  const colors = TAG_COLORS[tipo] || { bg: '#eee', color: '#333' };
   const tag = document.getElementById('ic-tag');
   tag.textContent = TIPO_LABEL[tipo] || tipo;
   tag.style.background = colors.bg;
   tag.style.color = colors.color;
-  document.getElementById('ic-title').textContent = d.regiao || d.local || '';
-  document.getElementById('ic-desc').textContent = d.descricao || d.desc || '';
+  document.getElementById('ic-title').textContent = d.regiao || '';
+  document.getElementById('ic-desc').textContent = d.descricao || '';
   document.getElementById('info-card').style.display = 'block';
 }
 
@@ -346,9 +302,40 @@ function setFilter(f, btn) {
   document.querySelectorAll('#filters button').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('info-card').style.display = 'none';
-  desenharMapa(f);
+  renderMapa(f);
 }
 window.setFilter = setFilter;
+
+async function carregarDados() {
+  try {
+    const resp = await fetch(SHEET_CSV_URL);
+    const text = await resp.text();
+    const linhas = text.trim().split('\n').slice(1);
+    dadosGlobais = linhas.map(l => {
+      const cols = l.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+      return {
+        regiao:    cols[0] || '',
+        lat:       parseFloat(cols[1]),
+        lng:       parseFloat(cols[2]),
+        tipo:      (cols[3] || '').toLowerCase().replace(/ /g, '_'),
+        descricao: cols[4] || '',
+        ativo:     (cols[5] || 'sim').toLowerCase() === 'sim'
+      };
+    }).filter(d => !isNaN(d.lat) && !isNaN(d.lng) && d.ativo);
+
+    const agora = new Date();
+    document.getElementById('header-date').textContent =
+      'Atualizado em ' + agora.toLocaleDateString('pt-BR') + ' — ' +
+      agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + 'h';
+    document.getElementById('status').textContent =
+      dadosGlobais.length + ' ocorrências carregadas · próxima atualização em ' + ATUALIZAR_A_CADA + ' min';
+
+    renderMapa(currentFilter);
+  } catch (e) {
+    document.getElementById('status').textContent = 'Erro ao carregar dados da planilha.';
+    console.error(e);
+  }
+}
 
 carregarDados();
 setInterval(carregarDados, ATUALIZAR_A_CADA * 60 * 1000);
