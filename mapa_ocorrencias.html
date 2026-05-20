@@ -229,7 +229,7 @@ function renderMapa(filter) {
       heatLayer = L.heatLayer(pts, {
         radius: 80,
         blur: 60,
-        maxZoom: 6,
+        minOpacity: 0.4,
         max: 1.0,
         gradient: {
           0.0: '#ffffb2',
@@ -336,6 +336,48 @@ async function carregarDados() {
     console.error(e);
   }
 }
+
+
+// Máscara: polígono mundo inteiro com buraco no Brasil
+// Carrega GeoJSON do Brasil e cria camada de máscara escura sobre oceano
+fetch('https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson')
+  .then(r => r.json())
+  .then(data => {
+    const brazil = data.features.find(f => f.properties.ISO_A3 === 'BRA');
+    if (!brazil) return;
+
+    // Cria polígono gigante cobrindo o mundo
+    const worldCoords = [[-90,-180],[-90,180],[90,180],[90,-180],[-90,-180]];
+
+    // Converte o Brasil em holes para recortar
+    const brazilCoords = brazil.geometry.coordinates;
+
+    // Monta GeoJSON com polygon world + holes Brazil
+    let holes = [];
+    if (brazil.geometry.type === 'Polygon') {
+      holes = brazilCoords;
+    } else if (brazil.geometry.type === 'MultiPolygon') {
+      brazilCoords.forEach(poly => poly.forEach(ring => holes.push(ring)));
+    }
+
+    const maskGeoJSON = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [worldCoords, ...holes]
+      }
+    };
+
+    L.geoJSON(maskGeoJSON, {
+      style: {
+        fillColor: '#a8c8d8',
+        fillOpacity: 0.85,
+        color: 'none',
+        weight: 0
+      },
+      interactive: false
+    }).addTo(map);
+  }).catch(e => console.warn('Máscara não carregou', e));
 
 carregarDados();
 setInterval(carregarDados, ATUALIZAR_A_CADA * 60 * 1000);
