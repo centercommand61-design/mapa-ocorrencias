@@ -49,7 +49,7 @@
   .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
   .legend-grad {
     width: 70px; height: 10px; border-radius: 3px;
-    background: linear-gradient(to right,#ffffb2,#fecc5c,#fd8d3c,#f03b20,#bd0026,#238b45);
+    background: linear-gradient(to right,#ffffb2,#fecc5c,#fd8d3c,#f03b20,#bd0026,#8c0014);
   }
   .legend-sq {
     width: 14px; height: 14px; border-radius: 3px;
@@ -165,13 +165,13 @@ const TAG_COLORS = {
 };
 
 function heatColor(t) {
+  // Amarelo → laranja → vermelho → vermelho escuro (sem verde)
   const stops = [
     [0.0,  [255,255,178]],
     [0.3,  [254,204, 92]],
     [0.55, [253,141, 60]],
     [0.75, [240, 59, 32]],
-    [0.9,  [189,  0, 38]],
-    [1.0,  [ 35,139, 69]],
+    [1.0,  [140,  0, 20]],
   ];
   for (let i = 1; i < stops.length; i++) {
     if (t <= stops[i][0]) {
@@ -180,7 +180,7 @@ function heatColor(t) {
       return `rgb(${Math.round(lo[1][0]+(hi[1][0]-lo[1][0])*f)},${Math.round(lo[1][1]+(hi[1][1]-lo[1][1])*f)},${Math.round(lo[1][2]+(hi[1][2]-lo[1][2])*f)})`;
     }
   }
-  return 'rgb(35,139,69)';
+  return 'rgb(140,0,20)';
 }
 
 async function carregarDados() {
@@ -301,9 +301,9 @@ async function desenharMapa(filter) {
     .attr('stroke', '#2c5f7a')
     .attr('stroke-width', 1.8);
 
-  // Marcadores de bloqueio
+  // Marcadores de bloqueio — só aparecem no filtro 'all' ou 'bloqueio'
   if (filter === 'all' || filter === 'bloqueio') {
-    dados.filter(d => d.tipo === 'bloqueio').forEach(b => {
+    dadosGlobais.filter(d => d.ativo && d.tipo === 'bloqueio').forEach(b => {
       const [px, py] = proj([b.lng, b.lat]);
       const g = svg.append('g').attr('transform',`translate(${px},${py})`).style('cursor','pointer');
       g.append('rect').attr('x',-10).attr('y',-10).attr('width',20).attr('height',20)
@@ -314,13 +314,15 @@ async function desenharMapa(filter) {
     });
   }
 
-  // Pontos clicáveis nas chuvas
-  if (filter === 'all' || filter !== 'bloqueio') {
+  // Pontos clicáveis nas chuvas — cor baseada no tipo
+  const corPonto = { chuva_forte: '#8c0014', chuva_moderada: '#c05000', chuva_fraca: '#c89000' };
+  if (filter !== 'bloqueio') {
     dados.filter(d => d.tipo !== 'bloqueio').forEach(c => {
       const [px, py] = proj([c.lng, c.lat]);
       svg.append('circle')
         .attr('cx', px).attr('cy', py).attr('r', 5)
-        .attr('fill','rgba(0,0,0,0.20)').attr('stroke','#fff').attr('stroke-width',1.5)
+        .attr('fill', corPonto[c.tipo] || '#8c0014')
+        .attr('stroke','#fff').attr('stroke-width',1.5)
         .style('cursor','pointer')
         .on('click', () => showCard(c));
     });
