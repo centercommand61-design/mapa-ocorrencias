@@ -399,25 +399,30 @@ header .clock {
 <!-- SIDEBAR DIREITA -->
 <aside class="sidebar-right">
   <div class="sidebar-title">Legenda de Risco</div>
-  <div class="risk-item">
+  <div class="risk-item" onclick="filtrarPorSeveridade('critico')" style="cursor:pointer;border-radius:6px;padding:6px 4px;transition:background .15s" onmouseover="this.style.background='rgba(239,68,68,.08)'" onmouseout="this.style.background='transparent'">
     <div class="risk-dot" style="background:var(--critico);box-shadow:0 0 8px var(--critico)"></div>
     <div><div class="risk-name" style="color:var(--critico)">Crítico</div><div class="risk-desc">Situação grave, atenção máxima</div></div>
+    <span style="margin-left:auto;font-size:10px;color:var(--muted)">filtrar ▶</span>
   </div>
-  <div class="risk-item">
+  <div class="risk-item" onclick="filtrarPorSeveridade('alto')" style="cursor:pointer;border-radius:6px;padding:6px 4px;transition:background .15s" onmouseover="this.style.background='rgba(249,115,22,.08)'" onmouseout="this.style.background='transparent'">
     <div class="risk-dot" style="background:var(--alto);box-shadow:0 0 8px var(--alto)"></div>
     <div><div class="risk-name" style="color:var(--alto)">Alto</div><div class="risk-desc">Situação de risco elevado</div></div>
+    <span style="margin-left:auto;font-size:10px;color:var(--muted)">filtrar ▶</span>
   </div>
-  <div class="risk-item">
+  <div class="risk-item" onclick="filtrarPorSeveridade('moderado')" style="cursor:pointer;border-radius:6px;padding:6px 4px;transition:background .15s" onmouseover="this.style.background='rgba(234,179,8,.08)'" onmouseout="this.style.background='transparent'">
     <div class="risk-dot" style="background:var(--moderado);box-shadow:0 0 8px var(--moderado)"></div>
     <div><div class="risk-name" style="color:var(--moderado)">Moderado</div><div class="risk-desc">Situação de atenção</div></div>
+    <span style="margin-left:auto;font-size:10px;color:var(--muted)">filtrar ▶</span>
   </div>
-  <div class="risk-item">
+  <div class="risk-item" onclick="filtrarPorSeveridade('baixo')" style="cursor:pointer;border-radius:6px;padding:6px 4px;transition:background .15s" onmouseover="this.style.background='rgba(34,197,94,.08)'" onmouseout="this.style.background='transparent'">
     <div class="risk-dot" style="background:var(--baixo);box-shadow:0 0 8px var(--baixo)"></div>
     <div><div class="risk-name" style="color:var(--baixo)">Baixo</div><div class="risk-desc">Situação controlada</div></div>
+    <span style="margin-left:auto;font-size:10px;color:var(--muted)">filtrar ▶</span>
   </div>
-  <div class="risk-item">
+  <div class="risk-item" onclick="filtrarPorSeveridade('all')" style="cursor:pointer;border-radius:6px;padding:6px 4px;transition:background .15s" onmouseover="this.style.background='rgba(148,163,184,.08)'" onmouseout="this.style.background='transparent'">
     <div class="risk-dot" style="background:var(--semrisco)"></div>
-    <div><div class="risk-name" style="color:var(--semrisco)">Sem risco</div><div class="risk-desc">Condições normais</div></div>
+    <div><div class="risk-name" style="color:var(--semrisco)">Sem risco / Todos</div><div class="risk-desc">Limpar filtro de severidade</div></div>
+    <span style="margin-left:auto;font-size:10px;color:var(--muted)">limpar ✕</span>
   </div>
 
   <div class="sidebar-title" style="margin-top:4px;">Eventos Recentes</div>
@@ -600,13 +605,13 @@ function atualizarEventos(){
   const lista=document.getElementById('eventos-lista');
   lista.innerHTML='';
   const recentes=[...dadosGlobais].slice(0,5);
-  recentes.forEach(d=>{
+  recentes.forEach((d,idx)=>{
     const sev=SEV_MAP[d.tipo]||'semrisco';
     const cor=SEV_COLOR[sev];
     const agora=new Date();
     const hora=agora.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     lista.innerHTML+=`
-      <div class="evento-item">
+      <div class="evento-item" onclick="zoomEvento(${idx})" style="cursor:pointer;" title="Clique para ir ao evento no mapa">
         <div class="evento-icon">${TIPO_ICON[d.tipo]||'📍'}</div>
         <div class="evento-info">
           <div class="evento-nome">${TIPO_LABEL[d.tipo]||d.tipo}</div>
@@ -658,10 +663,10 @@ function desenharBars(){
   const maxC=Math.max(...counts,1);
   const chart=document.getElementById('barChart');
   chart.innerHTML=sevs.map((s,i)=>`
-    <div class="bar-col">
+    <div class="bar-col" onclick="filtrarPorSeveridade('${s}')" style="cursor:pointer;transition:transform .15s" onmouseover="this.style.transform='scaleY(1.05)'" onmouseout="this.style.transform='scaleY(1)'">
       <div class="bar-val" style="color:${cores[i]}">${counts[i]}</div>
-      <div class="bar-rect" style="background:${cores[i]};height:${Math.round((counts[i]/maxC)*70)+8}px;box-shadow:0 0 8px ${cores[i]}44"></div>
-      <div class="bar-label">${labels[i]}</div>
+      <div class="bar-rect" style="background:${cores[i]};height:${Math.round((counts[i]/maxC)*70)+8}px;box-shadow:0 0 12px ${cores[i]}66;border:1px solid ${cores[i]}88"></div>
+      <div class="bar-label" style="color:${cores[i]}">${labels[i]}</div>
     </div>`).join('');
 }
 
@@ -738,6 +743,31 @@ async function carregarDados(){
     console.error(e);
   }
 }
+
+
+// Filtrar por severidade (clique na legenda ou barra)
+function filtrarPorSeveridade(sev){
+  filtroSev = sev;
+  document.getElementById('f-sev').value = sev;
+  renderMapa();
+  // Feedback visual no select
+  const sel = document.getElementById('f-sev');
+  sel.style.borderColor = sev==='all' ? 'var(--border2)' : SEV_COLOR[sev]||'var(--accent)';
+  sel.style.boxShadow  = sev==='all' ? 'none' : `0 0 8px ${SEV_COLOR[sev]}44`;
+  setTimeout(()=>{ sel.style.borderColor=''; sel.style.boxShadow=''; }, 2000);
+}
+window.filtrarPorSeveridade = filtrarPorSeveridade;
+
+// Zoom em evento recente
+function zoomEvento(idx){
+  const d = dadosGlobais[idx];
+  if(!d) return;
+  // Zoom suave até o ponto
+  map.flyTo([d.lat, d.lng], 8, { animate:true, duration:1.2 });
+  // Abre o card de info
+  setTimeout(()=>showInfo(d), 800);
+}
+window.zoomEvento = zoomEvento;
 
 carregarDados();
 setInterval(carregarDados, ATUALIZAR_A_CADA*60*1000);
