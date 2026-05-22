@@ -343,6 +343,14 @@ header .clock {
     <div class="kpi-icon">🌧</div>
   </div>
 
+  <div class="risk-item" style="border-top:1px solid var(--border2);padding-top:10px;margin-top:2px;">
+    <div class="risk-dot" style="background:#3b82f6;box-shadow:0 0 8px #3b82f6;border-radius:3px;"></div>
+    <div><div class="risk-name" style="color:#3b82f6">Operação Policial</div><div class="risk-desc">Operação em andamento na via</div></div>
+  </div>
+  <div class="risk-item">
+    <div class="risk-dot" style="background:#a855f7;box-shadow:0 0 8px #a855f7;border-radius:3px;"></div>
+    <div><div class="risk-name" style="color:#a855f7">Manifestação</div><div class="risk-desc">Interdição por manifestação</div></div>
+  </div>
   <div class="sidebar-title" style="margin-top:4px;">Filtros</div>
   <div class="filter-group">
     <label>Tipo de Evento</label>
@@ -352,6 +360,8 @@ header .clock {
       <option value="chuva_moderada">Chuva moderada</option>
       <option value="chuva_fraca">Chuva fraca</option>
       <option value="bloqueio">Bloqueio</option>
+      <option value="operacao_policial">Operação Policial</option>
+      <option value="manifestacao">Manifestação</option>
     </select>
   </div>
   <div class="filter-group">
@@ -462,13 +472,14 @@ header .clock {
 const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRrysvG-gD3Eic4CgOpPd8vBaOKvZ8IkL2MM7JcEJwYrslOKuoYl6vzwATwUNmNd3SOomucHs4j-20A/pub?output=csv";
 const ATUALIZAR_A_CADA = 60; // minutos
 const RAIO_KM = { chuva_forte:280, chuva_moderada:200, chuva_fraca:140 };
+const TIPOS_PONTUAIS = ['bloqueio','operacao_policial','manifestacao'];
 // =====================================================================
 
 // Severidade automática baseada no tipo
-const SEV_MAP = { chuva_forte:'critico', chuva_moderada:'moderado', chuva_fraca:'baixo', bloqueio:'alto' };
+const SEV_MAP = { chuva_forte:'critico', chuva_moderada:'moderado', chuva_fraca:'baixo', bloqueio:'alto', operacao_policial:'alto', manifestacao:'moderado' };
 const SEV_COLOR = { critico:'#ef4444', alto:'#f97316', moderado:'#eab308', baixo:'#22c55e', semrisco:'#94a3b8' };
-const TIPO_LABEL = { chuva_forte:'Chuvas intensas', chuva_moderada:'Chuvas moderadas', chuva_fraca:'Chuvas fracas', bloqueio:'Bloqueio rodovia' };
-const TIPO_ICON  = { chuva_forte:'🌧', chuva_moderada:'🌦', chuva_fraca:'🌂', bloqueio:'🚧' };
+const TIPO_LABEL = { chuva_forte:'Chuvas intensas', chuva_moderada:'Chuvas moderadas', chuva_fraca:'Chuvas fracas', bloqueio:'Bloqueio rodovia', operacao_policial:'Operação Policial', manifestacao:'Manifestação' };
+const TIPO_ICON  = { chuva_forte:'🌧', chuva_moderada:'🌦', chuva_fraca:'🌂', bloqueio:'🚧', operacao_policial:'🚔', manifestacao:'📢' };
 
 // MAPA
 const TILES = {
@@ -497,6 +508,14 @@ function heatColor(tipo){
   if(tipo==='chuva_fraca')    return '#eab308';
   return '#94a3b8';
 }
+function iconePontual(tipo){
+  const cfg = {
+    bloqueio:          { bg:'#f97316', emoji:'!',  glow:'rgba(249,115,22,.6)'  },
+    operacao_policial: { bg:'#3b82f6', emoji:'🚔', glow:'rgba(59,130,246,.6)'  },
+    manifestacao:      { bg:'#a855f7', emoji:'📢', glow:'rgba(168,85,247,.6)'  },
+  };
+  return cfg[tipo] || { bg:'#94a3b8', emoji:'?', glow:'rgba(148,163,184,.4)' };
+}
 
 function renderMapa(){
   if(chuvaLayer){map.removeLayer(chuvaLayer);chuvaLayer=null;}
@@ -512,7 +531,7 @@ function renderMapa(){
   chuvaLayer = L.layerGroup();
   bloqueioLayer = L.layerGroup();
 
-  dados.filter(d=>d.tipo!=='bloqueio').forEach(d=>{
+  dados.filter(d=>!TIPOS_PONTUAIS.includes(d.tipo)).forEach(d=>{
     const cor = heatColor(d.tipo);
     const raio = (RAIO_KM[d.tipo]||180)*1000;
     L.circle([d.lat,d.lng],{radius:raio*1.3,color:'none',fillColor:cor,fillOpacity:.18,interactive:false}).addTo(chuvaLayer);
@@ -523,8 +542,13 @@ function renderMapa(){
     pt.addTo(chuvaLayer);
   });
 
-  dados.filter(d=>d.tipo==='bloqueio').forEach(b=>{
-    const icon=L.divIcon({className:'',html:`<div style="width:28px;height:28px;border-radius:6px;background:#f97316;border:2px solid #fff;box-shadow:0 0 10px rgba(249,115,22,.6);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;font-family:Arial;">!</div>`,iconSize:[28,28],iconAnchor:[14,14]});
+  dados.filter(d=>TIPOS_PONTUAIS.includes(d.tipo)).forEach(b=>{
+    const cfg=iconePontual(b.tipo);
+    const isBloqueio=b.tipo==='bloqueio';
+    const html=isBloqueio
+      ? `<div style="width:28px;height:28px;border-radius:6px;background:${cfg.bg};border:2px solid #fff;box-shadow:0 0 10px ${cfg.glow};display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:#fff;font-family:Arial;">!</div>`
+      : `<div style="width:32px;height:32px;border-radius:50%;background:${cfg.bg};border:2px solid #fff;box-shadow:0 0 10px ${cfg.glow};display:flex;align-items:center;justify-content:center;font-size:17px;">` + cfg.emoji + `</div>`;
+    const icon=L.divIcon({className:'',html,iconSize:[32,32],iconAnchor:[16,16]});
     const m=L.marker([b.lat,b.lng],{icon});
     m.on('click',()=>showInfo(b)); m.bindTooltip(`<b>${b.regiao}</b>`,{direction:'top'});
     m.addTo(bloqueioLayer);
@@ -563,7 +587,7 @@ window.limparFiltros=limparFiltros;
 function atualizarKPIs(){
   const total=dadosGlobais.length;
   const criticos=dadosGlobais.filter(d=>SEV_MAP[d.tipo]==='critico').length;
-  const bloqueios=dadosGlobais.filter(d=>d.tipo==='bloqueio').length;
+  const bloqueios=dadosGlobais.filter(d=>TIPOS_PONTUAIS.includes(d.tipo)).length;
   const chuvaForte=dadosGlobais.filter(d=>d.tipo==='chuva_forte').length;
   document.getElementById('kpi-critico').textContent=criticos;
   document.getElementById('kpi-total').textContent=total;
@@ -600,8 +624,8 @@ function atualizarEventos(){
 function desenharDonut(){
   const canvas=document.getElementById('donutCanvas');
   const ctx=canvas.getContext('2d');
-  const tipos=['chuva_forte','chuva_moderada','chuva_fraca','bloqueio'];
-  const cores=['#ef4444','#f97316','#eab308','#22c55e'];
+  const tipos=['chuva_forte','chuva_moderada','chuva_fraca','bloqueio','operacao_policial','manifestacao'];
+  const cores=['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#a855f7'];
   const counts=tipos.map(t=>dadosGlobais.filter(d=>d.tipo===t).length);
   const total=counts.reduce((a,b)=>a+b,0)||1;
   ctx.clearRect(0,0,100,100);
