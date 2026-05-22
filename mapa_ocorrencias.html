@@ -181,6 +181,7 @@ header .clock {
 }
 #info-float h3 { font-size: 14px; margin-bottom: 2px; }
 #info-float p  { font-size: 12px; color: var(--muted); }
+#info-float .expiry { font-size: 11px; margin-top:6px; padding:3px 8px; border-radius:4px; display:inline-block; }
 #info-close {
   position: absolute; top: 8px; right: 10px;
   cursor: pointer; color: var(--muted); font-size: 14px;
@@ -302,6 +303,17 @@ header .clock {
     <span>Última atualização:</span>
     <span id="hdr-date" style="color:var(--text)">--/--/----</span>
     <span id="hdr-hour" style="color:var(--text)">--:--</span>
+  </div>
+  <div style="position:relative;margin-left:12px;">
+    <input id="busca-input" type="text" placeholder="🔍  Buscar região ou rodovia..."
+      oninput="buscarEvento(this.value)"
+      style="background:#1a2235;border:1px solid #1e3a5f;color:#e2e8f0;border-radius:8px;
+             padding:6px 14px 6px 14px;font-size:13px;font-family:'Exo 2',sans-serif;
+             width:260px;outline:none;transition:border-color .2s;"
+      onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#1e3a5f'"/>
+    <div id="busca-results" style="display:none;position:absolute;top:36px;left:0;width:100%;
+      background:#111827;border:1px solid #1e3a5f;border-radius:8px;z-index:9999;
+      max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.5);"></div>
   </div>
   <div class="live-badge"><div class="live-dot"></div>AO VIVO</div>
   <div class="clock" id="relogio">--:--:--</div>
@@ -571,6 +583,32 @@ function showInfo(d){
   tag.style.background=cor+'22'; tag.style.color=cor;
   document.getElementById('if-title').textContent=d.regiao;
   document.getElementById('if-desc').textContent=d.descricao;
+  // Exibir validade
+  let expiryEl = document.getElementById('if-expiry');
+  if(!expiryEl){
+    expiryEl = document.createElement('div');
+    expiryEl.id = 'if-expiry';
+    expiryEl.className = 'expiry';
+    document.getElementById('info-float').appendChild(expiryEl);
+  }
+  if(d.validoAte && !isNaN(d.validoAte)){
+    const agora = new Date();
+    const diff  = Math.round((d.validoAte - agora) / 60000); // minutos restantes
+    if(diff > 60){
+      const h = Math.floor(diff/60), m = diff%60;
+      expiryEl.textContent = `⏱ Expira em ${h}h${m>0?m+'min':''}`;
+      expiryEl.style.background='rgba(59,130,246,.15)'; expiryEl.style.color='#3b82f6';
+    } else if(diff > 0){
+      expiryEl.textContent = `⚠ Expira em ${diff} min`;
+      expiryEl.style.background='rgba(234,179,8,.15)'; expiryEl.style.color='#eab308';
+    } else {
+      expiryEl.textContent = '✓ Expirando agora';
+      expiryEl.style.background='rgba(239,68,68,.15)'; expiryEl.style.color='#ef4444';
+    }
+    expiryEl.style.display='inline-block';
+  } else {
+    expiryEl.style.display='none';
+  }
   document.getElementById('info-float').style.display='block';
 }
 
@@ -721,10 +759,19 @@ async function carregarDados(){
     const linhas=text.trim().split('\n').slice(1);
     dadosGlobais=linhas.map(l=>{
       const cols=l.split(',').map(c=>c.trim().replace(/^"|"$/g,''));
-      return {regiao:cols[0]||'',lat:parseFloat(cols[1]),lng:parseFloat(cols[2]),
-              tipo:(cols[3]||'').toLowerCase().replace(/ /g,'_'),
-              descricao:cols[4]||'',ativo:(cols[5]||'sim').toLowerCase()==='sim'};
-    }).filter(d=>!isNaN(d.lat)&&!isNaN(d.lng)&&d.ativo);
+      const validoAte = cols[6] ? new Date(cols[6].replace(/(\d{2})\/(\d{2})\/(\d{4})\s(\d{2}):(\d{2})/,'$3-$2-$1T$4:$5')) : null;
+      const expirado  = validoAte && !isNaN(validoAte) && validoAte < new Date();
+      return {
+        regiao:    cols[0]||'',
+        lat:       parseFloat(cols[1]),
+        lng:       parseFloat(cols[2]),
+        tipo:      (cols[3]||'').toLowerCase().replace(/ /g,'_'),
+        descricao: cols[4]||'',
+        ativo:     (cols[5]||'sim').toLowerCase()==='sim',
+        validoAte,
+        expirado
+      };
+    }).filter(d=>!isNaN(d.lat)&&!isNaN(d.lng)&&d.ativo&&!d.expirado);
 
     const agora=new Date();
     document.getElementById('hdr-date').textContent=agora.toLocaleDateString('pt-BR');
@@ -744,6 +791,64 @@ async function carregarDados(){
   }
 }
 
+
+
+// ── BUSCA ──────────────────────────────────────────────
+function buscarEvento(q){
+  const box = document.getElementById('busca-results');
+  if(!q || q.length < 2){ box.style.display='none'; return; }
+  const termo = q.toLowerCase();
+  const achados = dadosGlobais.filter(d=>
+    d.regiao.toLowerCase().includes(termo) ||
+    d.descricao.toLowerCase().includes(termo) ||
+    (TIPO_LABEL[d.tipo]||'').toLowerCase().includes(termo)
+  );
+  if(!achados.length){
+    box.innerHTML=`<div style="padding:10px 14px;font-size:12px;color:#64748b;">Nenhum resultado encontrado</div>`;
+    box.style.display='block'; return;
+  }
+  box.innerHTML = achados.map((d,i)=>{
+    const sev=SEV_MAP[d.tipo]||'semrisco';
+    const cor=SEV_COLOR[sev];
+    return `<div onclick="selecionarBusca(${dadosGlobais.indexOf(d)})"
+      style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #1e3a5f;
+             display:flex;align-items:center;gap:10px;transition:background .15s;"
+      onmouseover="this.style.background='#1a2235'" onmouseout="this.style.background='transparent'">
+      <span style="font-size:16px">${TIPO_ICON[d.tipo]||'📍'}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${d.regiao}</div>
+        <div style="font-size:11px;color:#64748b;">${TIPO_LABEL[d.tipo]||d.tipo}</div>
+      </div>
+      <span style="font-size:10px;font-weight:700;color:${cor}">${sev.toUpperCase()}</span>
+    </div>`;
+  }).join('');
+  box.style.display='block';
+}
+
+function selecionarBusca(idx){
+  document.getElementById('busca-input').value = dadosGlobais[idx]?.regiao || '';
+  document.getElementById('busca-results').style.display='none';
+  zoomEvento(idx);
+}
+window.buscarEvento   = buscarEvento;
+window.selecionarBusca = selecionarBusca;
+
+// Fechar busca ao clicar fora
+document.addEventListener('click', e=>{
+  if(!e.target.closest('#busca-input') && !e.target.closest('#busca-results')){
+    document.getElementById('busca-results').style.display='none';
+  }
+});
+
+// ── EXPIRAÇÃO ──────────────────────────────────────────
+// Verifica a cada minuto se algum evento expirou e atualiza
+setInterval(()=>{
+  const antes = dadosGlobais.length;
+  dadosGlobais = dadosGlobais.filter(d=> !d.expirado && !(d.validoAte && !isNaN(d.validoAte) && d.validoAte < new Date()));
+  if(dadosGlobais.length !== antes){
+    atualizarKPIs(); atualizarEventos(); desenharDonut(); desenharBars(); desenharRegional(); renderMapa();
+  }
+}, 60000);
 
 // Filtrar por severidade (clique na legenda ou barra)
 function filtrarPorSeveridade(sev){
