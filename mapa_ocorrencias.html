@@ -515,9 +515,9 @@ function renderMapa(){
   dados.filter(d=>d.tipo!=='bloqueio').forEach(d=>{
     const cor = heatColor(d.tipo);
     const raio = (RAIO_KM[d.tipo]||180)*1000;
-    L.circle([d.lat,d.lng],{radius:raio*1.3,color:'none',fillColor:cor,fillOpacity:.08,interactive:false}).addTo(chuvaLayer);
-    L.circle([d.lat,d.lng],{radius:raio*.75,color:'none',fillColor:cor,fillOpacity:.18,interactive:false}).addTo(chuvaLayer);
-    L.circle([d.lat,d.lng],{radius:raio*.35,color:'none',fillColor:cor,fillOpacity:.40,interactive:false}).addTo(chuvaLayer);
+    L.circle([d.lat,d.lng],{radius:raio*1.3,color:'none',fillColor:cor,fillOpacity:.18,interactive:false}).addTo(chuvaLayer);
+    L.circle([d.lat,d.lng],{radius:raio*.75,color:'none',fillColor:cor,fillOpacity:.38,interactive:false}).addTo(chuvaLayer);
+    L.circle([d.lat,d.lng],{radius:raio*.35,color:'none',fillColor:cor,fillOpacity:.72,interactive:false}).addTo(chuvaLayer);
     const pt = L.circleMarker([d.lat,d.lng],{radius:6,color:'#fff',weight:2,fillColor:cor,fillOpacity:1});
     pt.on('click',()=>showInfo(d)); pt.bindTooltip(`<b>${d.regiao}</b>`,{direction:'top'});
     pt.addTo(chuvaLayer);
