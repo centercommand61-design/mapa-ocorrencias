@@ -762,10 +762,19 @@ window.filtrarPorSeveridade = filtrarPorSeveridade;
 function zoomEvento(idx){
   const d = dadosGlobais[idx];
   if(!d) return;
+
+  // Reseta filtros para garantir que o evento apareça no mapa
+  filtroSev = 'all';
+  filtroTipo = 'all';
+  document.getElementById('f-sev').value = 'all';
+  document.getElementById('f-tipo').value = 'all';
+  renderMapa();
+
   // Zoom suave até o ponto
   map.flyTo([d.lat, d.lng], 8, { animate:true, duration:1.2 });
-  // Abre o card de info
-  setTimeout(()=>showInfo(d), 800);
+
+  // Abre o card de info após o zoom
+  setTimeout(()=>showInfo(d), 900);
 }
 window.zoomEvento = zoomEvento;
 
